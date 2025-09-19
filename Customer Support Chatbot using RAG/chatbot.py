@@ -1,6 +1,3 @@
-# ==============================================================================
-# --- Part 1: Setup and Data Preparation (Steps 1-3) ---
-# ==============================================================================
 import os
 import streamlit as st
 from gtts import gTTS
@@ -23,9 +20,6 @@ api_key = os.getenv("GOOGLE_API_KEY")
 if not api_key:
     raise ValueError("GOOGLE_API_KEY not found. Make sure it's set in your .env file.")
 
-# Function to setup the RAG components (to avoid re-running on every interaction)
-# COPY AND PASTE THIS ENTIRE FUNCTION INTO YOUR chatbot.py FILE
-
 @st.cache_resource
 def setup_rag_chain():
     """
@@ -41,17 +35,12 @@ def setup_rag_chain():
     docs = text_splitter.split_documents(documents)
 
     # 3. Create embeddings and store in vector DB using the FREE model
-    #    This is the most important change.
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
     db = Chroma.from_documents(docs, embeddings)
     retriever = db.as_retriever()
 
     return retriever
-
-# ==============================================================================
-# --- Part 2: Building the Question-Answering Chain (Step 4) ---
-# ==============================================================================
 
 # The LLM to use for generating answers
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
@@ -76,11 +65,6 @@ retriever = setup_rag_chain()
 # This is the final RAG chain. It retrieves documents AND then generates an answer.
 retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-
-# ==============================================================================
-# --- Part 3: Create a User Interface with Streamlit (Step 5) ---
-# ==============================================================================
-
 st.title("📄 Customer Support Chatbot 🗣️")
 st.write("Ask me anything about our shipping, returns, or account policies!")
 
@@ -94,7 +78,6 @@ if user_input:
         answer_text = response["answer"]
 
         # --- New Voice Generation Code ---
-        # Create an in-memory audio file
         audio_io = io.BytesIO()
         # Use gTTS to convert the text answer to speech
         tts = gTTS(text=answer_text, lang='en')
@@ -108,4 +91,5 @@ if user_input:
 
     # Display the audio player for the spoken answer
     st.subheader("Spoken Answer:")
+
     st.audio(audio_io)
