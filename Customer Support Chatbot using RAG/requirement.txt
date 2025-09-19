@@ -1,8 +1,0 @@
-streamlit
-langchain
-python-dotenv
-chromadb
-langchain-google-genai
-sentence-transformers
-gTTS
-langchain-huggingface
