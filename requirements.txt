@@ -6,3 +6,4 @@ langchain-google-genai
 sentence-transformers
 gTTS
 langchain-huggingface
+langchain-community
