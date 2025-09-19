@@ -1,8 +1,8 @@
 streamlit
 langchain
 python-dotenv
-chromadb==0.4.15
-pysqlite3-binary==0.5.4
+chromadb
+pysqlite3-binary
 langchain-google-genai
 sentence-transformers
 gTTS
