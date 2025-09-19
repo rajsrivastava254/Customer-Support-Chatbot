@@ -3,7 +3,7 @@ import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 
 import os
-import streamlit as st
+import streamlit as st  
 from gtts import gTTS
 import io
 from dotenv import load_dotenv
@@ -69,10 +69,14 @@ retriever = setup_rag_chain()
 # This is the final RAG chain. It retrieves documents AND then generates an answer.
 retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-st.title("📄 Customer Support Chatbot 🗣️")
-st.write("Ask me anything about our shipping, returns, or account policies!")
+# ==============================================================================
+# --- Part 3: Create a User Interface with Streamlit ---
+# ==============================================================================
 
-# Get user input from a text box
+st.title("📄 Customer Support Chatbot 🗣️")
+st.write("Ask me anything about our policies, or try a sample question below.")
+
+# --- Text Input Box ---
 user_input = st.text_input("Your question:")
 
 if user_input:
@@ -81,19 +85,50 @@ if user_input:
         response = retrieval_chain.invoke({"input": user_input})
         answer_text = response["answer"]
 
-        # --- New Voice Generation Code ---
+        # Generate and display voice response
         audio_io = io.BytesIO()
-        # Use gTTS to convert the text answer to speech
         tts = gTTS(text=answer_text, lang='en')
-        # Write the audio data to the in-memory file
         tts.write_to_fp(audio_io)
-        # --- End of New Code ---
 
-    # Display the written answer
+    # Display the written and spoken answers
     st.subheader("Answer:")
     st.write(answer_text)
+    st.audio(audio_io)
 
-    # Display the audio player for the spoken answer
-    st.subheader("Spoken Answer:")
+# --- Sample Questions Section (New Feature) ---
+st.subheader("Or try one of these sample questions:")
 
+sample_questions = [
+    "What are your shipping options?",
+    "What is your return policy?",
+    "Do you ship internationally?",
+    "How do I reset my password?"
+]
+
+# Display buttons in columns for a cleaner look
+col1, col2 = st.columns(2)
+
+for i, question in enumerate(sample_questions):
+    if i % 2 == 0:
+        with col1:
+            if st.button(question, use_container_width=True):
+                user_input = question  # Set the user_input to the question
+    else:
+        with col2:
+            if st.button(question, use_container_width=True):
+                user_input = question  # Set the user_input to the question
+
+# This part is now outside the original if-statement to handle both text and button inputs
+if user_input and st.button not in st.session_state:
+    with st.spinner("Finding an answer..."):
+        response = retrieval_chain.invoke({"input": user_input})
+        answer_text = response["answer"]
+
+        # Generate and display voice response
+        audio_io = io.BytesIO()
+        tts = gTTS(text=answer_text, lang='en')
+        tts.write_to_fp(audio_io)
+
+    st.subheader("Answer:")
+    st.write(answer_text)
     st.audio(audio_io)
