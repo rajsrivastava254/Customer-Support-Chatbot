@@ -1,3 +1,5 @@
+# ...existing code...
+# --- STEP 1: SQLite Fix (Must be at the very top) ---
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -7,128 +9,109 @@ import streamlit as st
 from gtts import gTTS
 import io
 from dotenv import load_dotenv
-from langchain.text_splitter import CharacterTextSplitter
+
+# --- STEP 2: Updated 2026 LangChain Imports ---
+from langchain_text_splitters import CharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma  # Updated from community
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from langchain_classic.chains import create_retrieval_chain
 from langchain_core.prompts import ChatPromptTemplate
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
-# Ensure the OpenAI API key is set
+# API Key Validation
 api_key = os.getenv("GOOGLE_API_KEY")
 if not api_key:
-    raise ValueError("GOOGLE_API_KEY not found. Make sure it's set in your .env file.")
+    st.error("GOOGLE_API_KEY not found. Please set it in your .env file or Streamlit secrets.")
+    st.stop()
 
 @st.cache_resource
 def setup_rag_chain():
     """
-    Loads data, splits it, creates embeddings, stores in a vector DB,
-    and sets up the retrieval chain.
+    Loads data, splits it, creates embeddings, stores in a vector DB.
     """
-    # 1. Load your data
+    # 1. Load data
+    if not os.path.exists('support_data.txt'):
+        # Create a dummy file if it doesn't exist for the first run
+        with open('support_data.txt', 'w') as f:
+            f.write("Our shipping takes 3-5 days. Returns are accepted within 30 days.")
+            
     loader = TextLoader('support_data.txt')
     documents = loader.load()
 
-    # 2. Split the document into chunks
+    # 2. Split chunks
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     docs = text_splitter.split_documents(documents)
 
-    # 3. Create embeddings and store in vector DB using the FREE model
+    # 3. Embeddings & Vector DB (Using updated langchain_chroma)
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
     db = Chroma.from_documents(docs, embeddings)
-    retriever = db.as_retriever()
+    return db.as_retriever()
 
-    return retriever
-
-# The LLM to use for generating answers
+# --- STEP 3: Chain Setup ---
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
 
-# The prompt template guides the LLM on how to answer
 prompt = ChatPromptTemplate.from_template("""
 Answer the user's question based only on the following context:
-
 <context>
 {context}
 </context>
-
 Question: {input}
 """)
 
-# This chain will combine the retrieved documents into the prompt
-document_chain = create_stuff_documents_chain(llm, prompt)
-
-# Setup the retriever once
+# Setup the components
 retriever = setup_rag_chain()
-
-# This is the final RAG chain. It retrieves documents AND then generates an answer.
+document_chain = create_stuff_documents_chain(llm, prompt)
 retrieval_chain = create_retrieval_chain(retriever, document_chain)
 
-# ==============================================================================
-# --- Part 3: Create a User Interface with Streamlit ---
-# ==============================================================================
-
+# --- STEP 4: Streamlit UI ---
 st.title("📄 Customer Support Chatbot 🗣️")
-st.write("Ask me anything about our policies, or try a sample question below.")
+st.write("Ask about our policies or use the samples below.")
 
-# --- Text Input Box ---
-user_input = st.text_input("Your question:")
-
-if user_input:
-    # When the user enters a question, invoke the RAG chain
+# Function to handle processing
+def process_question(query):
     with st.spinner("Finding an answer..."):
-        response = retrieval_chain.invoke({"input": user_input})
-        answer_text = response["answer"]
-
-        # Generate and display voice response
+        # Prefer the chain's run() interface; handle dict/string returns robustly
+        try:
+            response = retrieval_chain.run(query)
+        except Exception:
+            # fallback to calling as a mapping
+            response = retrieval_chain({"input": query})
+        if isinstance(response, dict):
+            answer = response.get("answer") or response.get("output") or str(response)
+        else:
+            answer = str(response)
+        
+        # Audio generation
         audio_io = io.BytesIO()
-        tts = gTTS(text=answer_text, lang='en')
+        tts = gTTS(text=answer, lang='en')
         tts.write_to_fp(audio_io)
+        audio_io.seek(0)
+        return answer, audio_io
 
-    # Display the written and spoken answers
+# Text Input
+user_input = st.text_input("Your question:", key="text_input")
+
+# Sample Questions
+st.subheader("Sample questions:")
+samples = ["What are your shipping options?", "What is your return policy?"]
+cols = st.columns(len(samples))
+
+clicked_sample = None
+for i, sample in enumerate(samples):
+    if cols[i].button(sample):
+        clicked_sample = sample
+
+# Execute if text entered OR button clicked
+final_query = user_input or clicked_sample
+
+if final_query:
+    answer_text, audio_data = process_question(final_query)
     st.subheader("Answer:")
     st.write(answer_text)
-    st.audio(audio_io)
-
-# --- Sample Questions Section (New Feature) ---
-st.subheader("Or try one of these sample questions:")
-
-sample_questions = [
-    "What are your shipping options?",
-    "What is your return policy?",
-    "Do you ship internationally?",
-    "How do I reset my password?"
-]
-
-# Display buttons in columns for a cleaner look
-col1, col2 = st.columns(2)
-
-for i, question in enumerate(sample_questions):
-    if i % 2 == 0:
-        with col1:
-            if st.button(question, use_container_width=True):
-                user_input = question  # Set the user_input to the question
-    else:
-        with col2:
-            if st.button(question, use_container_width=True):
-                user_input = question  # Set the user_input to the question
-
-# This part is now outside the original if-statement to handle both text and button inputs
-if user_input and st.button not in st.session_state:
-    with st.spinner("Finding an answer..."):
-        response = retrieval_chain.invoke({"input": user_input})
-        answer_text = response["answer"]
-
-        # Generate and display voice response
-        audio_io = io.BytesIO()
-        tts = gTTS(text=answer_text, lang='en')
-        tts.write_to_fp(audio_io)
-
-    st.subheader("Answer:")
-    st.write(answer_text)
-    st.audio(audio_io)
+    st.audio(audio_data)
+# ...existing code...
